@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>사주 풀이 (브라우저 ONNX · 프롬프트 점검판)</title>
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔮</text></svg>">
+
+  <style>
+    :root{ --bg:#0f1320; --fg:#eef2ff; --muted:#9aa3b2; --card:#141a33; --line:#243055; --accent:#76a7ff; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:system-ui,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,sans-serif;
+      color:var(--fg);
+      background:linear-gradient(180deg,#0b1020,#0c1226 35%,#0b1020 100%);
+    }
+    .wrap{max-width:880px;margin:28px auto;padding:0 16px}
+    header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+    header h1{font-size:22px;margin:0}
+    header .sub{color:var(--muted);font-size:13px}
+    .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 6px 18px rgba(0,0,0,.18);}
+    .grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+    @media (max-width:720px){ .grid{grid-template-columns:1fr} }
+    label{display:block; margin:8px 0 6px; font-weight:600}
+    input,select,textarea,button{
+      width:100%; padding:10px 12px; border-radius:12px; border:1px solid var(--line);
+      background:#0e1530; color:#eef2ff; outline:none;
+    }
+    input:focus,select:focus,textarea:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(118,167,255,.2)}
+    textarea{min-height:92px; resize:vertical}
+    .actions{display:flex; gap:10px; align-items:center; margin-top:8px}
+    .btn{
+      background:linear-gradient(180deg,#7db3ff,#6aa2ff 60%,#5b94fb 100%); color:#091224; border:none; font-weight:700; letter-spacing:.2px; cursor:pointer;
+      transition:transform .05s ease, filter .2s ease; padding:10px 14px; border-radius:12px;
+    }
+    .btn:active{transform:translateY(1px)}
+    .btn[disabled]{filter:grayscale(1); opacity:.6; cursor:not-allowed}
+    .out{margin-top:16px}
+    .result{border:1px dashed var(--line); border-radius:14px; padding:16px; background:#0e1430;}
+    .muted{color:var(--muted); font-size:13px}
+    .small{color:var(--muted); font-size:12px; margin-top:10px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    details{margin-top:12px}
+    summary{cursor:pointer}
+    .kv{display:inline-block; margin-right:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>사주 풀이</h1>
+      <span class="sub">가벼운 키워드 룰로 오늘 한 줄 조언까지</span>
+    </header>
+
+    <section class="card">
+      <div class="grid">
+        <div>
+          <label for="name">이름</label>
+          <input id="name" placeholder="이름(선택)"/>
+        </div>
+        <div>
+          <label for="birth">생년월일</label>
+          <input id="birth" type="date" />
+        </div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label for="hour">태어난 시각</label>
+          <select id="hour">
+            <option value="" selected>선택하세요</option>
+            <option value="자(23~01)">자(23~01)</option>
+            <option value="축(01~03)">축(01~03)</option>
+            <option value="인(03~05)">인(03~05)</option>
+            <option value="묘(05~07)">묘(05~07)</option>
+            <option value="진(07~09)">진(07~09)</option>
+            <option value="사(09~11)">사(09~11)</option>
+            <option value="오(11~13)">오(11~13)</option>
+            <option value="미(13~15)">미(13~15)</option>
+            <option value="신(15~17)">신(15~17)</option>
+            <option value="유(17~19)">유(17~19)</option>
+            <option value="술(19~21)">술(19~21)</option>
+            <option value="해(21~23)">해(21~23)</option>
+          </select>
+          <div class="small">정확한 시각을 모르면 대략 근사값을 선택해도 됩니다.</div>
+        </div>
+        <div>
+          <label for="q">질문/고민(선택)</label>
+          <textarea id="q" placeholder=""></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="run" class="btn">풀이하기</button>
+        <span class="muted mono">Enter로도 실행(질문칸 제외)</span>
+      </div>
+
+      <div class="out">
+        <div id="out" class="result muted">여기에 결과가 표시됩니다.</div>
+        <details>
+          <summary>프롬프트 미리보기/디버그</summary>
+          <div class="small">
+            <span class="kv">입력 토큰수: <b id="toklen">-</b></span>
+            <span class="kv">eosId: <b id="eos">-</b></span>
+            <span class="kv">I/O: <b id="io">-</b></span>
+            <span class="kv">logits dims: <b id="dims">-</b></span>
+          </div>
+          <pre id="preview" class="result mono" style="white-space:pre-wrap"></pre>
+        </details>
+        <p class="small">※ 교육/오락용 데모입니다. 건강·법률·투자 등은 전문가 상담을 권장합니다.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- onnxruntime-web (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js"></script>
+
+  <!-- 앱 로직 (ESM) -->
+  <script type="module">
+    import { env as txEnv, AutoTokenizer } from 'https://esm.sh/@xenova/transformers@2.17.2?bundle&target=es2020';
+
+    // ---------- ORT & transformers 설정 ----------
+    const ort = window.ort;
+    const ORT_WASM_DIR = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
+    ort.env.wasm.wasmPaths = ORT_WASM_DIR;
+    ort.env.wasm.numThreads = self.crossOriginIsolated
+      ? Math.min(navigator.hardwareConcurrency || 4, 4)
+      : 1;
+
+    txEnv.backends.onnx.wasm.wasmPaths = ORT_WASM_DIR;
+    txEnv.allowLocalModels = true;
+    txEnv.localModelPath   = new URL('./', location.href).toString();
+
+    // ---------- 모델/토크나이저 ----------
+    const MODEL_URL = 'https://huggingface.co/finnfei/kogpt2-saju-onnx-web/resolve/main/model.onnx?download=true';
+    const tokenizer = await AutoTokenizer.from_pretrained('finnfei/kogpt2-saju-onnx-web');
+    window.eosId = typeof tokenizer?.eos_token_id === 'number' ? tokenizer.eos_token_id : -1;
+
+    const session = await ort.InferenceSession.create(MODEL_URL, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+
+    // ---------- dtype 자동 맞춤 유틸 ----------
+    function tensorI64(data, dims) {
+      const arr64 = BigInt64Array.from(data, x => BigInt(x));
+      return new ort.Tensor('int64', arr64, dims);
+    }
+    function tensorI32(data, dims) {
+      const arr32 = Int32Array.from(data);
+      return new ort.Tensor('int32', arr32, dims);
+    }
+    async function runWithAutoDType(session, name_in, name_mask, ids, mask) {
+      const dimsIn = [1, ids.length];
+      const dimsMask = [1, mask.length];
+
+      try {
+        const feeds64 = {
+          [name_in]:  tensorI64(ids, dimsIn),
+          ...(name_mask ? { [name_mask]: tensorI64(mask, dimsMask) } : {}),
+        };
+        return await session.run(feeds64);
+      } catch (e) {
+        const msg = String(e?.message || e);
+        // 모델이 int32를 기대하면 재시도
+        if (msg.includes('tensor(int32)') || msg.includes('expected: (tensor(int32))')) {
+          const feeds32 = {
+            [name_in]:  tensorI32(ids, dimsIn),
+            ...(name_mask ? { [name_mask]: tensorI32(mask, dimsMask) } : {}),
+          };
+          return await session.run(feeds32);
+        }
+        throw e;
+      }
+    }
+
+    // ---------- 토크나이저 유틸 ----------
+    const pickName = (cands, names) => cands.find(c => names.includes(c)) ?? names[0];
+
+    async function encodeText(text) {
+      let e;
+      if (typeof tokenizer.encode === 'function') e = await tokenizer.encode(text);
+      else e = await tokenizer(text);
+
+      if (Array.isArray(e)) return Int32Array.from(e);
+      if (e && Array.isArray(e.ids)) return Int32Array.from(e.ids);
+      if (e && Array.isArray(e.input_ids)) return Int32Array.from(e.input_ids);
+      if (e && e.input_ids && e.input_ids.data) return Int32Array.from(e.input_ids.data);
+      if (e && e.input_ids && ArrayBuffer.isView(e.input_ids)) return Int32Array.from(e.input_ids);
+
+      // 마지막 안전망
+      if (e && typeof e === 'object') {
+        for (const k of ['token_ids','inputIds','tokens']) {
+          if (Array.isArray(e[k])) return Int32Array.from(e[k]);
+          if (e[k] && ArrayBuffer.isView(e[k])) return Int32Array.from(e[k]);
+        }
+      }
+      console.error('Unexpected tokenizer output:', e);
+      throw new Error('tokenize 실패');
+    }
+
+    async function decodeIds(ids) {
+      const arr = Array.from(ids);
+      if (typeof tokenizer.decode === 'function') {
+        return await tokenizer.decode(arr, { skip_special_tokens: true });
+      }
+      if (typeof tokenizer.batch_decode === 'function') {
+        const [text] = await tokenizer.batch_decode([arr], { skip_special_tokens: true });
+        return text;
+      }
+      throw new Error('decode 실패');
+    }
+
+    // ---------- 샘플링 유틸 (그리디 → Top-k) ----------
+    function sampleTopK(row, k=40, temperature=1.0) {
+      const idx = [...row.keys()].sort((a,b) => row[b]-row[a]).slice(0, k);
+      // temperature
+      const scaled = idx.map(i => row[i] / Math.max(temperature, 1e-6));
+      // 안정적인 softmax
+      const m = Math.max(...scaled);
+      const exps = scaled.map(v => Math.exp(v - m));
+      const Z = exps.reduce((a,b)=>a+b,0);
+      let r = Math.random() * Z;
+      for (let j=0;j<idx.length;j++){
+        r -= exps[j];
+        if (r <= 0) return idx[j];
+      }
+      return idx[idx.length-1];
+    }
+
+    // ---------- 생성 ----------
+    async function generate(prompt, maxNew = 220, topk=40, temperature=0.95) {
+      // 1) 프롬프트 토큰화
+      let ids = Int32Array.from(await encodeText(prompt));
+      const startLen = ids.length; // ← 프롬프트 길이 기억
+      document.getElementById('toklen').textContent = String(startLen);
+
+      // 2) 입출력 이름
+      const name_in   = pickName(['input_ids','inputs','tokens'], session.inputNames);
+      const name_mask = pickName(['attention_mask','attn_mask','mask'], session.inputNames);
+      const name_out  = pickName(['logits','output','logits_out'], session.outputNames);
+      const eos = (typeof window.eosId === 'number') ? window.eosId : -1;
+      document.getElementById('eos').textContent = String(eos);
+      document.getElementById('io').textContent = `${name_in}, ${name_mask} → ${name_out}`;
+
+      // 3) 토큰 반복 생성
+      for (let step = 0; step < maxNew; step++) {
+        const mask = new Array(ids.length).fill(1);
+
+        // (int64/int32 자동 대응)
+        const out = await runWithAutoDType(session, name_in, name_mask, ids, mask);
+
+        const logits = out[name_out];
+        const dims = (logits?.dims || []).join('×');
+        document.getElementById('dims').textContent = dims || '-';
+        if (!logits || logits.dims.length !== 3) throw new Error('logits 차원 비정상');
+
+        const seqLen = logits.dims[1], V = logits.dims[2];
+        const base   = (seqLen - 1) * V;
+
+        const row = logits.data.subarray(base, base + V);
+        const nextId = sampleTopK(row, topk, temperature);
+
+        if (nextId === eos) break;
+
+        const next = new Int32Array(ids.length + 1);
+        next.set(ids); next[ids.length] = nextId; ids = next;
+      }
+
+      // 4) 프롬프트를 제외한 “신규 생성 토큰”만 디코딩
+      const generated = ids.slice(startLen);
+      if (generated.length === 0) return '';
+      return await decodeIds(generated);
+    }
+
+    function buildPrompt({ name, birth, hour, q }) {
+      const who = name ? `이름: ${name}\n` : '';
+      const hr  = hour ? hour : '모름(근사)';
+      const qq  = q ? `질문: ${q}\n` : '';
+      return `[사주입력]
+${who}생년월일: ${birth}
+태어난 시각: ${hr}
+${qq}[지시]
+- 연애/금전/직업/건강 중심으로 간단 키워드 풀이 후 오늘의 한 줄.
+- 과장 금지, 보수적 톤.
+[출력]`;
+    }
+
+    // ---------- UI ----------
+    const btn = document.getElementById('run');
+    const out = document.getElementById('out');
+    const preview = document.getElementById('preview');
+
+    btn.addEventListener('click', async () => {
+      const name  = (document.getElementById('name').value || '').trim();
+      const birth = document.getElementById('birth').value;
+      const hour  = document.getElementById('hour').value;
+      let   q     = (document.getElementById('q')?.value || '').trim();
+      if (q.length > 300) q = q.slice(0,300) + '…';
+      if (!birth){ out.textContent = '생년월일을 입력하세요.'; return; }
+
+      const prompt = buildPrompt({ name, birth, hour, q });
+      preview.textContent = prompt; // 프롬프트 미리보기로 박제
+
+      btn.disabled = true; out.textContent = '생성 중…';
+      try {
+        const text   = await generate(prompt, 220, 40, 0.95);
+        out.textContent = (text || '').replaceAll('<unk>', '').trim() || '결과 없음';
+      } catch (e) {
+        console.error(e);
+        out.textContent = '⚠ 오류: ' + (e?.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const active = document.activeElement;
+      if (e.key === 'Enter' && active && active.id !== 'q') {
+        e.preventDefault(); btn.click();
+      }
+    });
+
+    // ---------- 디버그 헬퍼 ----------
+    window.testONNX = async () => {
+      try {
+        const enc = Array.from(await encodeText('테스트'));
+        const name_in  = pickName(['input_ids','inputs','tokens'], session.inputNames);
+        const name_mask = pickName(['attention_mask','attn_mask','mask'], session.inputNames);
+        const out = await runWithAutoDType(session, name_in, name_mask, enc, new Array(enc.length).fill(1));
+        return Object.keys(out);
+      } catch (e) {
+        return 'run error: ' + (e?.message || e);
+      }
+    };
+  </script>
+</body>
+</html>
